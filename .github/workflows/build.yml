@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download ffmpeg (BtbN GPL build)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
+          $root = (Get-ChildItem ffmpeg-dl -Directory)[0].FullName
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item "$root\bin\ffmpeg.exe", "$root\bin\ffprobe.exe" dist
+          Copy-Item "$root\LICENSE.txt" dist\FFMPEG-LICENSE.txt
+          "$PWD\dist" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - run: go test -v ./...
+
+      - run: go build -ldflags "-H=windowsgui -s -w" -o dist/hls-converter.exe .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hls-converter-win64
+          path: dist
+
+      - name: Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: Compress-Archive dist\* hls-converter-win64.zip
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hls-converter-win64.zip
