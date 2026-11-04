@@ -26,7 +26,7 @@ main 브랜치 push만 해도 Actions artifact(hls-converter-win64)로 exe를 �
 
 - `hls.go`: ffprobe로 높이/길이/오디오 유무 조회 → ffmpeg **1회 실행**으로 `split` + `-var_stream_map` 사용해 전 화질 동시 인코딩, 마스터 플레이리스트(`playlist.m3u8`)도 ffmpeg가 생성. 원본보다 큰 화질은 건너뜀. 출력은 입력 파일 옆 `<파일명>/` 폴더.
 - 키프레임은 `-force_key_frames`로 2초 고정(fps 파싱 불필요). `keyframeSeconds`는 `segmentSeconds`의 약수여야 세그먼트가 정렬된다.
-- ffmpeg 경로: exe와 같은 폴더 우선, 없으면 PATH (`tool()`).
+- ffmpeg 경로: PATH 우선, 없으면 exe와 같은 폴더 (`tool()`).
 - `proc_windows.go`: GUI exe(`-H=windowsgui`)에서 ffmpeg 콘솔 창이 뜨지 않게 CREATE_NO_WINDOW.
 - Fyne UI 갱신은 고루틴에서 반드시 `fyne.Do`로.
 

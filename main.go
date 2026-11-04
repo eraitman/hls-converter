@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -22,6 +23,7 @@ type item struct {
 	state    string // 대기 / 변환 중 / 완료 / 실패
 	progress float64
 	detail   string
+	started  time.Time
 }
 
 func main() {
@@ -91,7 +93,7 @@ func buildUI(ctx context.Context, w fyne.Window) {
 			text := it.state
 			switch it.state {
 			case "변환 중":
-				text, state.Importance = fmt.Sprintf("변환 중  %d%%", int(it.progress*100)), widget.HighImportance
+				text, state.Importance = fmt.Sprintf("변환 중  %d%%", int(it.progress*100))+eta(it), widget.HighImportance
 			case "완료":
 				state.Importance, barColor = widget.SuccessImportance, colSuccess
 			case "실패":
@@ -152,7 +154,10 @@ func buildUI(ctx context.Context, w fyne.Window) {
 				if it.state == "완료" {
 					continue
 				}
-				fyne.Do(func() { it.state, it.progress, it.detail = "변환 중", 0, ""; list.RefreshItem(i) })
+				fyne.Do(func() {
+					it.state, it.progress, it.detail, it.started = "변환 중", 0, "", time.Now()
+					list.RefreshItem(i)
+				})
 				out, err := convert(ctx, it.path, func(p float64) {
 					fyne.Do(func() { it.progress = p; list.RefreshItem(i) })
 				})
@@ -214,4 +219,14 @@ func setLineBar(c *fyne.Container, frac float64, col color.Color) {
 	c.Layout.(*lineBar).frac = frac
 	c.Objects[1].(*canvas.Rectangle).FillColor = col
 	c.Refresh()
+}
+
+// 경과 시간과 진행률로 남은 시간을 추정한다. 초반(2% 미만)은 값이 튀므로 생략.
+func eta(it *item) string {
+	if it.progress < 0.02 {
+		return ""
+	}
+	elapsed := time.Since(it.started)
+	left := time.Duration(float64(elapsed) * (1 - it.progress) / it.progress).Round(time.Second)
+	return fmt.Sprintf("  · 약 %d:%02d 남음", int(left.Minutes()), int(left.Seconds())%60)
 }

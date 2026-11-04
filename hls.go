@@ -110,10 +110,13 @@ func buildArgs(input, outDir string, info probeInfo) []string {
 		filepath.Join(outDir, "%v.m3u8"))
 }
 
-// exe와 같은 폴더의 ffmpeg/ffprobe를 우선 쓰고, 없으면 PATH에서 찾는다.
+// PATH의 ffmpeg/ffprobe를 우선 쓰고, 없으면 exe와 같은 폴더에서 찾는다.
 func tool(name string) string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		return p
 	}
 	if exe, err := os.Executable(); err == nil {
 		p := filepath.Join(filepath.Dir(exe), name)
