@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // 만들 화질 목록. 원본보다 큰 높이는 건너뛴다(업스케일 방지).
@@ -55,7 +56,19 @@ func pickRenditions(srcHeight int) []rendition {
 	return out
 }
 
-func buildArgs(input, outDir string, info probeInfo) []string {
+// 1080p 미만 화질에 NVENC를 쓰는 높이 기준. 1080p는 화질 우선으로 libx264.
+const cpuMinHeight = 1080
+
+// NVIDIA GPU + NVENC 사용 가능 여부를 짧은 테스트 인코딩으로 1회 확인한다.
+var nvencAvailable = sync.OnceValue(func() bool {
+	cmd := exec.Command(tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:d=0.1",
+		"-c:v", "h264_nvenc", "-f", "null", "-")
+	hideWindow(cmd)
+	return cmd.Run() == nil
+})
+
+// gpu가 true면 1080p 미만은 h264_nvenc, 1080p는 libx264로 인코딩한다.
+func buildArgs(input, outDir string, info probeInfo, gpu bool) []string {
 	rs := pickRenditions(info.height)
 	n := len(rs)
 
@@ -76,9 +89,16 @@ func buildArgs(input, outDir string, info probeInfo) []string {
 	}
 
 	args = append(args,
-		"-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-sc_threshold", "0",
+		"-profile:v", "high",
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", keyframeSeconds))
 	for i, r := range rs {
+		s := func(opt string) string { return fmt.Sprintf("-%s:v:%d", opt, i) }
+		if gpu && r.height < cpuMinHeight {
+			args = append(args, s("c"), "h264_nvenc", s("preset"), "p5", s("rc"), "vbr",
+				s("spatial-aq"), "1", s("forced-idr"), "1")
+		} else {
+			args = append(args, s("c"), "libx264", s("preset"), "medium", s("sc_threshold"), "0")
+		}
 		args = append(args,
 			fmt.Sprintf("-b:v:%d", i), fmt.Sprintf("%dk", r.vBitrate),
 			fmt.Sprintf("-maxrate:v:%d", i), fmt.Sprintf("%dk", int(float64(r.vBitrate)*maxrateRatio)),
@@ -176,7 +196,7 @@ func convert(ctx context.Context, input string, onProgress func(float64)) (strin
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, tool("ffmpeg"), buildArgs(input, outDir, info)...)
+	cmd := exec.CommandContext(ctx, tool("ffmpeg"), buildArgs(input, outDir, info, nvencAvailable())...)
 	hideWindow(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

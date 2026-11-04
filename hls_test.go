@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPickRenditionsSkipsUpscale(t *testing.T) {
@@ -20,7 +21,7 @@ func TestPickRenditionsSkipsUpscale(t *testing.T) {
 }
 
 func TestBuildArgsNoAudio(t *testing.T) {
-	args := strings.Join(buildArgs("in.mp4", "out", probeInfo{height: 1080}), " ")
+	args := strings.Join(buildArgs("in.mp4", "out", probeInfo{height: 1080}, false), " ")
 	if strings.Contains(args, "0:a") || strings.Contains(args, "a:0") {
 		t.Fatalf("오디오 없는 입력에 오디오 매핑이 들어감: %s", args)
 	}
@@ -53,5 +54,35 @@ func TestConvertEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "720p_000.ts")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestQueueETA(t *testing.T) {
+	items := []*item{
+		{state: "완료", progress: 1, duration: 60, inRun: true},      // 60초 처리
+		{state: "변환 중", progress: 0.5, duration: 120, inRun: true}, // 60초 처리, 60초 남음
+		{state: "대기", duration: 180, inRun: true},                  // 180초 남음
+		{state: "완료", progress: 1, duration: 999},                  // 이전 실행분: 제외
+	}
+	// 120초 분량을 60초에 처리(2배속) → 남은 240초 분량은 120초
+	left, ok := queueETA(items, 60*time.Second)
+	if !ok || left != 120*time.Second {
+		t.Fatalf("got %v %v", left, ok)
+	}
+	if got := fmtDur(3725 * time.Second); got != "1:02:05" {
+		t.Fatal(got)
+	}
+}
+
+func TestBuildArgsHybridEncoders(t *testing.T) {
+	args := strings.Join(buildArgs("in.mp4", "out", probeInfo{height: 1080, hasAudio: true}, true), " ")
+	for _, want := range []string{"-c:v:0 h264_nvenc", "-c:v:1 h264_nvenc", "-c:v:2 libx264"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("%q 없음: %s", want, args)
+		}
+	}
+	cpu := strings.Join(buildArgs("in.mp4", "out", probeInfo{height: 1080}, false), " ")
+	if strings.Contains(cpu, "nvenc") {
+		t.Fatalf("GPU 없을 때 nvenc 사용: %s", cpu)
 	}
 }

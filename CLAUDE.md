@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-여러 mp4를 끌어다 놓으면 순차적으로 HLS(480p/720p/1080p, libx264)로 변환하는 Windows용 GUI 도구.
+여러 mp4를 끌어다 놓으면 순차적으로 HLS(480p/720p/1080p)로 변환하는 Windows용 GUI 도구.
 Go + Fyne. exe는 GitHub Actions(windows-latest)에서 빌드하고, ffmpeg.exe/ffprobe.exe(BtbN GPL 빌드)를 동봉한다.
 원래 `hls.sh`(bash로 ffmpeg 명령을 출력해 PowerShell에 붙여넣던 방식)를 대체한다.
 
@@ -33,4 +33,5 @@ main 브랜치 push만 해도 Actions artifact(hls-converter-win64)로 exe를 �
 ## 반복 실수 주의
 
 - Fyne는 CGO가 필요하다. Windows 빌드는 Actions 러너의 gcc(MinGW)에 의존한다.
-- 인코더를 NVENC로 바꾸면 `-sc_threshold`, `-crf`는 무시된다(오너가 화질 때문에 x264를 선택함).
+- 인코더 혼합: NVENC가 되면 1080p 미만은 h264_nvenc, 1080p는 libx264(오너가 화질 때문에 1080p는 x264로 결정). 안 되면 전부 x264. 인코더별 옵션은 `-opt:v:N` 스트림 지정자로만 준다 — `-sc_threshold`는 x264 전용, `-crf`는 NVENC에 없음.
+- NVENC 경로는 Mac/CI(GPU 없음)에서 검증 불가. 오너 Windows PC에서만 확인된다.

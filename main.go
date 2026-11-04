@@ -24,6 +24,8 @@ type item struct {
 	progress float64
 	detail   string
 	started  time.Time
+	duration float64 // 영상 길이(초). 추가 시 ffprobe로 채움
+	inRun    bool    // 이번 실행 대상인지(전체 잔여시간 계산용)
 }
 
 func main() {
@@ -48,13 +50,21 @@ func card(content fyne.CanvasObject) fyne.CanvasObject {
 func buildUI(ctx context.Context, w fyne.Window) {
 	var items []*item
 	running := false
+	var queueStart time.Time
 
 	// 헤더
 	title := canvas.NewText("HLS 변환기", colText)
 	title.TextSize = 22
 	title.TextStyle.Bold = true
-	subtitle := canvas.NewText("mp4 → 480p · 720p · 1080p HLS (libx264)", colMuted)
+	subtitle := canvas.NewText("mp4 → 480p · 720p · 1080p HLS", colMuted)
 	subtitle.TextSize = 12
+	go func() { // 인코더 구성 표시 (NVENC 확인은 1초 미만)
+		mode := "  ·  전부 CPU(x264)"
+		if nvencAvailable() {
+			mode = "  ·  480p·720p GPU(NVENC) + 1080p CPU(x264)"
+		}
+		fyne.Do(func() { subtitle.Text += mode; subtitle.Refresh() })
+	}()
 	header := container.NewVBox(title, subtitle)
 
 	// 빈 상태: 드롭존
@@ -117,7 +127,7 @@ func buildUI(ctx context.Context, w fyne.Window) {
 	summary.TextSize = 12
 
 	var startBtn, clearBtn *widget.Button
-	refresh := func() {
+	updateSummary := func() {
 		done := 0
 		for _, it := range items {
 			if it.state == "완료" {
@@ -132,8 +142,14 @@ func buildUI(ctx context.Context, w fyne.Window) {
 			dropZone.Hide()
 			list.Show()
 			summary.Text = fmt.Sprintf("%d개 파일 · %d개 완료", len(items), done)
+			if left, ok := queueETA(items, time.Since(queueStart)); running && ok {
+				summary.Text += " · 전체 약 " + fmtDur(left) + " 남음"
+			}
 		}
 		summary.Refresh()
+	}
+	refresh := func() {
+		updateSummary()
 		list.Refresh()
 	}
 
@@ -147,6 +163,10 @@ func buildUI(ctx context.Context, w fyne.Window) {
 			return
 		}
 		running = true
+		queueStart = time.Now()
+		for _, it := range items {
+			it.inRun = it.state != "완료"
+		}
 		startBtn.Disable()
 		clearBtn.Disable()
 		go func() {
@@ -159,7 +179,7 @@ func buildUI(ctx context.Context, w fyne.Window) {
 					list.RefreshItem(i)
 				})
 				out, err := convert(ctx, it.path, func(p float64) {
-					fyne.Do(func() { it.progress = p; list.RefreshItem(i) })
+					fyne.Do(func() { it.progress = p; list.RefreshItem(i); updateSummary() })
 				})
 				fyne.Do(func() {
 					if err != nil {
@@ -185,7 +205,13 @@ func buildUI(ctx context.Context, w fyne.Window) {
 		}
 		for _, u := range uris {
 			if strings.EqualFold(filepath.Ext(u.Path()), ".mp4") {
-				items = append(items, &item{path: filepath.FromSlash(u.Path()), state: "대기"})
+				it := &item{path: filepath.FromSlash(u.Path()), state: "대기"}
+				items = append(items, it)
+				go func() {
+					if info, err := probe(ctx, it.path); err == nil {
+						fyne.Do(func() { it.duration = info.duration })
+					}
+				}()
 			}
 		}
 		refresh()
@@ -228,5 +254,32 @@ func eta(it *item) string {
 	}
 	elapsed := time.Since(it.started)
 	left := time.Duration(float64(elapsed) * (1 - it.progress) / it.progress).Round(time.Second)
-	return fmt.Sprintf("  · 약 %d:%02d 남음", int(left.Minutes()), int(left.Seconds())%60)
+	return "  · 약 " + fmtDur(left) + " 남음"
+}
+
+// 이번 실행에서 처리한 영상 길이 ÷ 경과 시간 = 처리 속도. 남은 영상 길이 ÷ 속도 = 전체 잔여시간.
+// 파일마다 해상도가 달라 속도가 다를 수 있으므로 근사치다.
+func queueETA(items []*item, elapsed time.Duration) (time.Duration, bool) {
+	var done, left float64
+	for _, it := range items {
+		if !it.inRun {
+			continue
+		}
+		done += it.duration * it.progress
+		if it.state == "대기" || it.state == "변환 중" {
+			left += it.duration * (1 - it.progress)
+		}
+	}
+	if done <= 0 || left <= 0 || elapsed < 3*time.Second {
+		return 0, false
+	}
+	return time.Duration(float64(elapsed) * left / done).Round(time.Second), true
+}
+
+func fmtDur(d time.Duration) string {
+	s := int(d.Seconds())
+	if s >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
+	}
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
 }
