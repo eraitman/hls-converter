@@ -1,3 +1,4 @@
 /hls-converter
 *.exe
 /dist/
+/out/

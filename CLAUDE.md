@@ -20,7 +20,8 @@ go run .                             # Mac에서 GUI 실행(로컬 ffmpeg/ffprob
 git tag v0.1.0 && git push --tags    # Actions가 zip을 만들어 GitHub Release에 올림
 ```
 
-main 브랜치 push만 해도 Actions artifact(hls-converter-win64)로 exe를 받을 수 있다.
+main 브랜치 push만 해도 Actions artifact로 받을 수 있다: hls-converter-win64(exe+ffmpeg 폴더), hls-converter-setup(설치 파일).
+설치 파일은 `installer/hls-converter.iss`(Inno Setup, Program Files 설치, 시작 메뉴만 — 바탕화면 바로가기는 오너가 원치 않음). Mac에서는 빌드 불가, CI에서만 검증된다.
 
 ## 아키텍처
 

@@ -38,6 +38,20 @@ jobs:
           name: hls-converter-win64
           path: dist
 
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { "dev" }
+          $iscc = (Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          & $iscc "/DAppVersion=$v" installer\hls-converter.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hls-converter-setup
+          path: out/hls-converter-setup.exe
+
       - name: Release (tag only)
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -45,4 +59,6 @@ jobs:
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: hls-converter-win64.zip
+          files: |
+            hls-converter-win64.zip
+            out/hls-converter-setup.exe
