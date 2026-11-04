@@ -15,9 +15,7 @@ metadata:
 **Why:** 오너가 대화에서 명시적으로 고른 것들이라 코드만 봐서는 "왜"가 안 보인다.
 **How to apply:** 이 전제를 유지하고, 바꾸려면 먼저 오너에게 묻는다.
 
-## 미검증 (2026-11-04 기준)
-- NVENC 혼합 경로: Mac/CI에 GPU가 없어 오너 Windows PC에서만 확인 가능. 아직 결과 못 받음.
-- Inno Setup 설치 파일 빌드: CI에서 첫 실행 결과 확인 전.
-- Actions 실행 e8f2113, fce101a가 "cancelled"로 기록됨 — 원인 미확인.
+## 검증 상태
+- 2026-11-04: 오너가 Windows PC에서 exe·설치 파일·NVENC 혼합 변환 모두 동작 확인 ("잘 된다").
 
 관련: [[user-workflow]]
